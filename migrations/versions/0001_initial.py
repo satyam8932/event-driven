@@ -20,11 +20,11 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.create_table(
         "jobs",
-        sa.Column("id", sa.String(36), primary_key=True),
+        sa.Column("id", postgresql.UUID(as_uuid=False), primary_key=True),
         sa.Column("status", sa.String(32), nullable=False, server_default="PENDING"),
         sa.Column("manuscript_key", sa.Text, nullable=False),
         sa.Column("final_key", sa.Text, nullable=True),
-        sa.Column("correlation_id", sa.String(36), nullable=False),
+        sa.Column("correlation_id", postgresql.UUID(as_uuid=False), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -41,8 +41,8 @@ def upgrade() -> None:
 
     op.create_table(
         "tasks",
-        sa.Column("id", sa.String(36), primary_key=True),
-        sa.Column("job_id", sa.String(36), sa.ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=False), primary_key=True),
+        sa.Column("job_id", postgresql.UUID(as_uuid=False), sa.ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False),
         sa.Column("stage", sa.String(32), nullable=False),
         sa.Column("status", sa.String(32), nullable=False, server_default="QUEUED"),
         sa.Column("attempts", sa.Integer, nullable=False, server_default="0"),
@@ -70,7 +70,7 @@ def upgrade() -> None:
     op.create_table(
         "outbox",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-        sa.Column("aggregate_id", sa.String(36), nullable=False),
+        sa.Column("aggregate_id", postgresql.UUID(as_uuid=False), nullable=False),
         sa.Column("event_type", sa.String(128), nullable=False),
         sa.Column("routing_key", sa.String(128), nullable=False),
         sa.Column("payload", postgresql.JSONB, nullable=False),
@@ -89,7 +89,7 @@ def upgrade() -> None:
 
     op.create_table(
         "processed_events",
-        sa.Column("event_id", sa.String(36), primary_key=True),
+        sa.Column("event_id", postgresql.UUID(as_uuid=False), primary_key=True),
         sa.Column("stage", sa.String(32), nullable=False),
         sa.Column(
             "processed_at",

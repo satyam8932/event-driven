@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import OutboxEvent
@@ -30,7 +31,7 @@ class OutboxRepository:
         await self._session.execute(
             update(OutboxEvent)
             .where(OutboxEvent.id == event_id)
-            .values(published_at=datetime.now(timezone.utc))
+            .values(published_at=datetime.now(UTC))
         )
 
     async def mark_failed(self, event_id: int) -> None:
@@ -41,7 +42,7 @@ class OutboxRepository:
         )
 
     async def prune_published(self, older_than: datetime) -> int:
-        result = await self._session.execute(
+        result: CursorResult[tuple[()]] = await self._session.execute(  # type: ignore[assignment]
             delete(OutboxEvent).where(
                 OutboxEvent.published_at.is_not(None),
                 OutboxEvent.published_at < older_than,

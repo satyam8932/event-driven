@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from starlette.requests import Request
 
+from app.api.routes import health, jobs
 from app.db.engine import close_engine
 from app.infra.broker import close_connection
 from app.infra.redis import close_redis
 from app.logging import configure_logging
-from app.api.routes import health, jobs
 
 
 @asynccontextmanager
@@ -29,7 +30,7 @@ app.include_router(health.router)
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request, exc: Exception) -> JSONResponse:
+async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 

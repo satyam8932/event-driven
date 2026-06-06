@@ -47,7 +47,7 @@ return redis.call('ZREM', KEYS[1], ARGV[1])
 
 
 class TtsSemaphore:
-    def __init__(self, redis: Redis, limit: int, lease_seconds: int) -> None:
+    def __init__(self, redis: Redis[str], limit: int, lease_seconds: int) -> None:
         self._redis = redis
         self._limit = limit
         self._lease_seconds = lease_seconds

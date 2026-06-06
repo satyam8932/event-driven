@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.db.uow import unit_of_work
 from app.infra.broker import close_connection, get_connection
 from app.logging import configure_logging, get_logger
-from app.messaging.topology import EXCHANGE_NAME, declare_topology
+from app.messaging.topology import declare_topology
 from app.repositories.outbox_repo import OutboxRepository
 
 log = get_logger(__name__)
@@ -18,9 +18,9 @@ log = get_logger(__name__)
 async def relay_loop() -> None:
     settings = get_settings()
     connection = await get_connection()
+    # aio-pika enables publisher_confirms=True by default; await exchange.publish()
+    # blocks until the broker sends a Basic.Ack — safe to mark published_at after.
     channel = await connection.channel()
-    # Publisher confirms: broker must acknowledge publish before we mark sent
-    await channel.set_qos(prefetch_count=0)
     exchange = await declare_topology(channel)
 
     log.info("relay_started", poll_interval=settings.relay_poll_interval)

@@ -6,9 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
-    Boolean,
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     Integer,
@@ -58,9 +56,7 @@ class Task(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="QUEUED")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     locked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lock_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    lock_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     input_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -88,9 +84,7 @@ class OutboxEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
     )
-    published_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     __table_args__ = (

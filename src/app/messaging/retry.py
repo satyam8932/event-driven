@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import random
+import uuid
+from typing import Any
 
 import aio_pika
 
@@ -21,6 +23,16 @@ def _jitter(base_ms: int, jitter_pct: float = 0.3) -> int:
     return base_ms + random.randint(-delta, delta)
 
 
+def _refresh_event_id(body: bytes) -> bytes:
+    """Return body with a new event_id so processed_events dedup doesn't block this retry."""
+    try:
+        payload = json.loads(body)
+        payload["event_id"] = str(uuid.uuid4())
+        return json.dumps(payload).encode()
+    except Exception:
+        return body
+
+
 def _delay_bucket(attempt: int) -> int:
     settings = get_settings()
     buckets = [settings.retry_base_ms, settings.retry_base_ms * 2, settings.retry_max_ms]
@@ -34,7 +46,7 @@ async def schedule_retry(
     stage: str,
     routing_key: str,
 ) -> None:
-    headers: dict = dict(original_message.headers or {})
+    headers: dict[str, Any] = dict(original_message.headers or {})
     attempt = int(headers.get(ATTEMPT_HEADER, 0)) + 1
     settings = get_settings()
 
@@ -45,6 +57,7 @@ async def schedule_retry(
     ttl_ms = _jitter(_delay_bucket(attempt))
     # Pick closest declared bucket
     from app.messaging.topology import DELAY_BUCKETS_MS
+
     bucket = min(DELAY_BUCKETS_MS, key=lambda b: abs(b - ttl_ms))
 
     headers[ATTEMPT_HEADER] = attempt
@@ -53,11 +66,11 @@ async def schedule_retry(
 
     delay_exchange = await channel.get_exchange(DELAY_EXCHANGE_NAME)
     retry_msg = aio_pika.Message(
-        body=original_message.body,
+        body=_refresh_event_id(original_message.body),
         headers=headers,
         delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
     )
-    await delay_exchange.publish(retry_msg, routing_key=f"q.delay.{bucket}")
+    await delay_exchange.publish(retry_msg, routing_key=f"q.delay.{stage}.{bucket}")
     log.info("retry_scheduled", stage=stage, attempt=attempt, delay_ms=bucket)
 
 
@@ -80,6 +93,7 @@ async def republish_for_semaphore_retry(
     channel: aio_pika.abc.AbstractChannel,
     original_message: aio_pika.abc.AbstractIncomingMessage,
     routing_key: str,
+    stage: str = "tts",
 ) -> None:
     """Re-queue with a short delay when TTS semaphore is full — never block the consumer."""
     from app.messaging.topology import DELAY_BUCKETS_MS
@@ -87,9 +101,9 @@ async def republish_for_semaphore_retry(
     headers = dict(original_message.headers or {})
     delay_exchange = await channel.get_exchange(DELAY_EXCHANGE_NAME)
     retry_msg = aio_pika.Message(
-        body=original_message.body,
+        body=_refresh_event_id(original_message.body),
         headers=headers,
         delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
     )
-    await delay_exchange.publish(retry_msg, routing_key=f"q.delay.{DELAY_BUCKETS_MS[0]}")
+    await delay_exchange.publish(retry_msg, routing_key=f"q.delay.{stage}.{DELAY_BUCKETS_MS[0]}")
     log.debug("semaphore_retry_scheduled")

@@ -30,15 +30,11 @@ async def run_migrations_online() -> None:
     settings = get_settings()
     connectable = create_async_engine(settings.database_url)
 
-    async with connectable.connect() as connection:
-        # Advisory lock prevents concurrent migration runs
+    async with connectable.begin() as connection:
         await connection.execute(
             __import__("sqlalchemy").text("SELECT pg_advisory_lock(12345678)")
         )
         await connection.run_sync(do_run_migrations)
-        await connection.execute(
-            __import__("sqlalchemy").text("SELECT pg_advisory_unlock(12345678)")
-        )
 
     await connectable.dispose()
 

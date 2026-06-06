@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 from datetime import UTC, datetime, timedelta
 
 from app.config import get_settings
@@ -9,9 +8,9 @@ from app.db.models import OutboxEvent
 from app.db.uow import unit_of_work
 from app.domain.enums import ROUTING_KEY, TaskStage
 from app.domain.events import EventEnvelope
-from app.infra.broker import close_connection
 from app.infra.redis import close_redis
 from app.logging import configure_logging, get_logger
+from app.repositories.cache_repo import ProcessedEventRepository
 from app.repositories.job_repo import JobRepository
 from app.repositories.outbox_repo import OutboxRepository
 from app.repositories.task_repo import TaskRepository
@@ -93,6 +92,17 @@ async def prune_outbox() -> None:
         log.info("janitor_outbox_pruned", deleted=deleted)
 
 
+async def prune_processed_events() -> None:
+    settings = get_settings()
+    older_than = datetime.now(UTC) - timedelta(seconds=settings.janitor_outbox_prune_age)
+
+    async with unit_of_work() as session:
+        deleted = await ProcessedEventRepository(session).prune_old(older_than)
+
+    if deleted:
+        log.info("janitor_processed_events_pruned", deleted=deleted)
+
+
 async def janitor_loop() -> None:
     settings = get_settings()
     log.info("janitor_started", interval=settings.janitor_interval)
@@ -101,6 +111,7 @@ async def janitor_loop() -> None:
         try:
             await reap_expired_leases()
             await prune_outbox()
+            await prune_processed_events()
         except Exception as exc:
             log.exception("janitor_error", error=str(exc))
         await asyncio.sleep(settings.janitor_interval)

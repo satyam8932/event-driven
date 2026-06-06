@@ -27,7 +27,7 @@ class EventEnvelope(BaseModel):
         correlation_id: str,
         job_id: str,
         data: dict[str, Any] | None = None,
-    ) -> "EventEnvelope":
+    ) -> EventEnvelope:
         return cls(
             event_type=event_type,
             correlation_id=correlation_id,

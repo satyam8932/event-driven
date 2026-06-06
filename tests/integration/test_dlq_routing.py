@@ -7,15 +7,15 @@ Verifies that:
 - permanent errors bypass retry and go straight to DLQ
 - semaphore-full path republishes to delay queue (not DLQ)
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.domain.errors import PermanentError, RetryableError, SemaphoreFullError
 from app.domain.events import EventEnvelope
-from app.messaging.retry import ATTEMPT_HEADER, _delay_bucket, _jitter
+from app.messaging.retry import ATTEMPT_HEADER
 
 
 def _make_mock_message(attempt: int = 0, body: bytes = b"{}") -> MagicMock:
@@ -40,6 +40,7 @@ async def test_retry_schedules_delay_under_max_attempts():
 
     with patch("app.messaging.retry.get_settings", return_value=settings_mock):
         from app.messaging import retry
+
         await retry.schedule_retry(channel, message, stage="parse", routing_key="job.parse")
 
     delay_exchange.publish.assert_called_once()
@@ -66,6 +67,7 @@ async def test_retry_routes_to_dlq_at_max_attempts():
 
     with patch("app.messaging.retry.get_settings", return_value=settings_mock):
         from app.messaging import retry
+
         await retry.schedule_retry(channel, message, stage="parse", routing_key="job.parse")
 
     dlx.publish.assert_called_once()
@@ -80,6 +82,7 @@ async def test_permanent_error_goes_straight_to_dlq():
     message = _make_mock_message(attempt=0)
 
     from app.messaging.retry import route_to_dlq
+
     await route_to_dlq(channel, message, stage="tts")
 
     dlx.publish.assert_called_once()
@@ -93,11 +96,13 @@ async def test_semaphore_full_republishes_to_delay_not_dlq():
     message = _make_mock_message(attempt=0, body=b'{"event_id":"x","routing_key":"job.tts"}')
 
     from app.messaging.retry import republish_for_semaphore_retry
+
     await republish_for_semaphore_retry(channel, message, routing_key="job.tts")
 
     delay_exchange.publish.assert_called_once()
     # Verify it went to the shortest delay bucket
     from app.messaging.topology import DELAY_BUCKETS_MS
+
     call_kwargs = delay_exchange.publish.call_args
     routing_key_used = call_kwargs.kwargs.get("routing_key") or call_kwargs.args[1]
     assert str(DELAY_BUCKETS_MS[0]) in str(routing_key_used)
@@ -107,7 +112,7 @@ def test_delay_buckets_are_bounded():
     from app.messaging.topology import DELAY_BUCKETS_MS
 
     assert len(DELAY_BUCKETS_MS) == 3
-    assert DELAY_BUCKETS_MS == sorted(DELAY_BUCKETS_MS)
+    assert sorted(DELAY_BUCKETS_MS) == DELAY_BUCKETS_MS
     assert DELAY_BUCKETS_MS[0] >= 1000
     assert DELAY_BUCKETS_MS[-1] <= 30_000
 
@@ -123,9 +128,7 @@ async def test_consumer_acks_on_duplicate_event():
 
     consumer = StageConsumer(stage="parse", handler=failing_handler)
 
-    envelope = EventEnvelope.build(
-        event_type="JobCreated", correlation_id="c", job_id="j"
-    )
+    envelope = EventEnvelope.build(event_type="JobCreated", correlation_id="c", job_id="j")
 
     channel = AsyncMock()
     message = AsyncMock()

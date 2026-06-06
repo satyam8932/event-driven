@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-from typing import Any
-
 import aio_pika
 import aio_pika.abc
 

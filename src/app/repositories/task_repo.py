@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,12 +51,15 @@ class TaskRepository:
         )
 
     async def fail(self, task_id: str, error: str, increment_attempts: bool = True) -> None:
-        values: dict = {"status": "QUEUED", "error": error, "locked_by": None, "lock_expires_at": None}
+        values: dict[str, Any] = {
+            "status": "QUEUED",
+            "error": error,
+            "locked_by": None,
+            "lock_expires_at": None,
+        }
         if increment_attempts:
             values["attempts"] = Task.attempts + 1
-        await self._session.execute(
-            update(Task).where(Task.id == task_id).values(**values)
-        )
+        await self._session.execute(update(Task).where(Task.id == task_id).values(**values))
 
     async def mark_dead(self, task_id: str, error: str) -> None:
         await self._session.execute(

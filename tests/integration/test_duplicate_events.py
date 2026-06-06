@@ -8,6 +8,7 @@ False on a second call for the same event_id.
 For real Postgres integration, run with docker-compose services up and
 set POSTGRES_HOST, POSTGRES_DB accordingly.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -67,8 +68,10 @@ async def test_stage_handler_raises_on_duplicate(monkeypatch):
     mock_event_repo = AsyncMock()
     mock_event_repo.record = AsyncMock(return_value=False)  # duplicate
 
-    with patch("app.services.parsing.unit_of_work", return_value=mock_uow), \
-         patch("app.services.parsing.ProcessedEventRepository", return_value=mock_event_repo):
+    with (
+        patch("app.services.parsing.unit_of_work", return_value=mock_uow),
+        patch("app.services.parsing.ProcessedEventRepository", return_value=mock_event_repo),
+    ):
         from app.services.parsing import handle_parse
 
         with pytest.raises(DuplicateEventError):
@@ -108,9 +111,11 @@ async def test_stale_transition_when_task_already_claimed():
 
     mock_job_repo = AsyncMock()
 
-    with patch("app.services.parsing.unit_of_work", return_value=mock_uow), \
-         patch("app.services.parsing.ProcessedEventRepository", return_value=mock_event_repo), \
-         patch("app.services.parsing.TaskRepository", return_value=mock_task_repo), \
-         patch("app.services.parsing.JobRepository", return_value=mock_job_repo):
-        with pytest.raises(StaleTransitionError):
-            await parsing.handle_parse(envelope, channel=AsyncMock())
+    with (
+        patch("app.services.parsing.unit_of_work", return_value=mock_uow),
+        patch("app.services.parsing.ProcessedEventRepository", return_value=mock_event_repo),
+        patch("app.services.parsing.TaskRepository", return_value=mock_task_repo),
+        patch("app.services.parsing.JobRepository", return_value=mock_job_repo),
+        pytest.raises(StaleTransitionError),
+    ):
+        await parsing.handle_parse(envelope, channel=AsyncMock())

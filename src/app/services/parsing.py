@@ -83,9 +83,7 @@ async def handle_parse(envelope: EventEnvelope, channel: aio_pika.abc.AbstractCh
             event_type="ParseCompleted",
             correlation_id=envelope.correlation_id,
             job_id=job_id,
-            data=ParseCompletedData(
-                parsed_key=parsed_key, block_count=len(blocks)
-            ).model_dump(),
+            data=ParseCompletedData(parsed_key=parsed_key, block_count=len(blocks)).model_dump(),
         )
         outbox_event = OutboxEvent(
             aggregate_id=job_id,

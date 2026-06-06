@@ -1,4 +1,4 @@
-.PHONY: up down build logs migrate test lint fmt type-check scale-workers seed kill-worker
+.PHONY: up down build logs migrate test test-unit test-integration lint fmt type-check scale-workers seed seed-poison kill-worker status
 
 COMPOSE = docker compose
 
@@ -43,19 +43,20 @@ test:
 	$(COMPOSE) --profile test run --rm test
 
 test-unit:
-	$(COMPOSE) --profile test run --rm test pytest tests/unit/ -v --tb=short
+	$(COMPOSE) --profile test run --rm test tests/unit/ -v --tb=short
 
 test-integration:
-	$(COMPOSE) --profile test run --rm test pytest tests/integration/ -v --tb=short
+	$(COMPOSE) --profile test run --rm test tests/integration/ -v --tb=short
 
+# lint/fmt/type-check use the tools profile (test-builder image with dev deps, no infra required)
 lint:
-	$(COMPOSE) run --rm --no-deps api sh -c "ruff check src/ tests/ && echo OK"
+	$(COMPOSE) --profile tools run --rm --no-deps tools python -m ruff check src/ tests/
 
 fmt:
-	$(COMPOSE) run --rm --no-deps api sh -c "black src/ tests/ && ruff check --fix src/ tests/"
+	$(COMPOSE) --profile tools run --rm --no-deps tools sh -c "python -m black src/ tests/ && python -m ruff check --fix src/ tests/"
 
 type-check:
-	$(COMPOSE) run --rm --no-deps api mypy src/
+	$(COMPOSE) --profile tools run --rm --no-deps tools python -m mypy src/
 
 status:
 	curl -s http://localhost:8000/health | python3 -m json.tool

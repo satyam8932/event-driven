@@ -35,7 +35,9 @@ async def main() -> None:
         if handler is None:
             log.warning("unknown_stage_skipped", stage=stage)
             continue
-        consumers.append(StageConsumer(stage=stage, handler=handler, prefetch=settings.worker_prefetch))
+        consumers.append(
+            StageConsumer(stage=stage, handler=handler, prefetch=settings.worker_prefetch)
+        )
 
     if not consumers:
         log.error("no_valid_stages_configured")

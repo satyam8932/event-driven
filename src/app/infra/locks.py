@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from redis.asyncio import Redis
 
@@ -13,7 +13,7 @@ _LOCK_TTL_MS = 30_000  # 30s per-hash generation lock
 
 
 @asynccontextmanager
-async def tts_generation_lock(redis: Redis, text_hash: str) -> AsyncGenerator[bool, None]:
+async def tts_generation_lock(redis: Redis[str], text_hash: str) -> AsyncGenerator[bool, None]:
     """
     Per-hash mutex to prevent cache stampede: two workers computing the same block simultaneously.
     Yields True if lock was acquired (caller should proceed with vendor call).

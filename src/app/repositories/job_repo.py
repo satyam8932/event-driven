@@ -21,9 +21,7 @@ class JobRepository:
         result = await self._session.execute(select(Job).where(Job.id == job_id))
         return result.scalar_one_or_none()
 
-    async def transition_status(
-        self, job_id: str, from_status: str, to_status: str
-    ) -> bool:
+    async def transition_status(self, job_id: str, from_status: str, to_status: str) -> bool:
         result = await self._session.execute(
             update(Job)
             .where(Job.id == job_id, Job.status == from_status)
@@ -33,16 +31,10 @@ class JobRepository:
         return result.scalar_one_or_none() is not None
 
     async def mark_failed(self, job_id: str, error: str) -> None:
-        await self._session.execute(
-            update(Job)
-            .where(Job.id == job_id)
-            .values(status="FAILED")
-        )
+        await self._session.execute(update(Job).where(Job.id == job_id).values(status="FAILED"))
         log.warning("job_failed", job_id=job_id, error=error)
 
     async def mark_completed(self, job_id: str, final_key: str) -> None:
         await self._session.execute(
-            update(Job)
-            .where(Job.id == job_id)
-            .values(status="COMPLETED", final_key=final_key)
+            update(Job).where(Job.id == job_id).values(status="COMPLETED", final_key=final_key)
         )

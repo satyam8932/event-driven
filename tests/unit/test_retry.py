@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from app.messaging.retry import _delay_bucket, _jitter
 
 

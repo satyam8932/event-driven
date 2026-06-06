@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import pytest
-
-from app.domain.enums import JobStatus, TaskStage, JOB_STAGE_TRANSITIONS
+from app.domain.enums import JOB_STAGE_TRANSITIONS, JobStatus, TaskStage
 
 
 def test_all_stages_have_transitions():

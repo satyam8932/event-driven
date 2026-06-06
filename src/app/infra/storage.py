@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from typing import Any
 
 import aioboto3
 from botocore.config import Config
@@ -17,7 +18,7 @@ def _make_session(public: bool = False) -> aioboto3.Session:
     return aioboto3.Session()
 
 
-def _s3_kwargs(public: bool = False) -> dict:
+def _s3_kwargs(public: bool = False) -> dict[str, Any]:
     settings = get_settings()
     endpoint = settings.minio_public_endpoint if public else settings.minio_endpoint
     scheme = "https" if settings.minio_secure else "http"
@@ -53,7 +54,7 @@ async def get_object(key: str) -> bytes:
     try:
         async with session.client(**_s3_kwargs()) as s3:
             response = await s3.get_object(Bucket=settings.minio_bucket, Key=key)
-            return await response["Body"].read()
+            return bytes(await response["Body"].read())
     except (BotoCoreError, ClientError) as exc:
         raise StorageError(f"GET {key} failed: {exc}") from exc
 
@@ -63,10 +64,12 @@ async def presign_url(key: str, expires: int = 3600) -> str:
     session = _make_session()
     try:
         async with session.client(**_s3_kwargs(public=True)) as s3:
-            return await s3.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": settings.minio_bucket, "Key": key},
-                ExpiresIn=expires,
+            return str(
+                await s3.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": settings.minio_bucket, "Key": key},
+                    ExpiresIn=expires,
+                )
             )
     except (BotoCoreError, ClientError) as exc:
         raise StorageError(f"presign {key} failed: {exc}") from exc

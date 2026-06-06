@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -116,7 +115,7 @@ async def test_semaphore_concurrent_count(fake_redis):
 
     sem = TtsSemaphore(fake_redis, limit=3, lease_seconds=60)
     t1 = await sem.acquire()
-    t2 = await sem.acquire()
+    await sem.acquire()
 
     count = await sem.current_count()
     assert count == 2

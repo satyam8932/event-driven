@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 import aio_pika
 import aio_pika.abc
@@ -41,7 +41,7 @@ class StageConsumer:
     async def run(self, connection: aio_pika.abc.AbstractRobustConnection) -> None:
         channel = await connection.channel()
         await channel.set_qos(prefetch_count=self._prefetch)
-        exchange = await declare_topology(channel)
+        await declare_topology(channel)
         queue = await channel.get_queue(self._queue_name)
 
         loop = asyncio.get_event_loop()
@@ -65,6 +65,7 @@ class StageConsumer:
         channel: aio_pika.abc.AbstractChannel,
     ) -> None:
         async with message.process(ignore_processed=True):
+            envelope: EventEnvelope | None = None
             try:
                 envelope = EventEnvelope.model_validate_json(message.body)
                 set_correlation_context(
@@ -76,30 +77,67 @@ class StageConsumer:
 
             except DuplicateEventError:
                 log.info("duplicate_event_skipped", stage=self._stage)
-                # ack (already handled by process context manager)
 
             except StaleTransitionError:
                 log.info("stale_transition_skipped", stage=self._stage)
-                # ack
 
             except SemaphoreFullError:
                 log.info("semaphore_full_retry", stage=self._stage)
-                await republish_for_semaphore_retry(channel, message, self._routing_key)
-                # ack original
+                if envelope is not None:
+                    await self._reset_task_for_retry(envelope.job_id)
+                await republish_for_semaphore_retry(
+                    channel, message, self._routing_key, stage=self._stage
+                )
 
             except PermanentError as exc:
                 log.error("permanent_error", stage=self._stage, error=str(exc))
+                if envelope is not None:
+                    await self._mark_task_dead(envelope.job_id, str(exc))
                 await route_to_dlq(channel, message, self._stage)
-                # ack original
 
             except RetryableError as exc:
                 log.warning("retryable_error", stage=self._stage, error=str(exc))
+                if envelope is not None:
+                    await self._reset_task_for_retry(envelope.job_id)
                 await schedule_retry(channel, message, self._stage, self._routing_key)
-                # ack original
 
             except Exception as exc:
                 log.exception("unexpected_error", stage=self._stage, error=str(exc))
+                if envelope is not None:
+                    await self._reset_task_for_retry(envelope.job_id)
                 await schedule_retry(channel, message, self._stage, self._routing_key)
+
+    async def _reset_task_for_retry(self, job_id: str) -> None:
+        from app.db.uow import unit_of_work
+        from app.repositories.task_repo import TaskRepository
+
+        try:
+            async with unit_of_work() as session:
+                repo = TaskRepository(session)
+                task = await repo.get_by_job_stage(job_id, self._stage)
+                if task and task.status == "PROCESSING":
+                    await repo.reset_to_queued(task.id)
+        except Exception as exc:
+            log.warning(
+                "consumer_reset_task_failed", job_id=job_id, stage=self._stage, error=str(exc)
+            )
+
+    async def _mark_task_dead(self, job_id: str, error: str) -> None:
+        from app.db.uow import unit_of_work
+        from app.repositories.job_repo import JobRepository
+        from app.repositories.task_repo import TaskRepository
+
+        try:
+            async with unit_of_work() as session:
+                task_repo = TaskRepository(session)
+                task = await task_repo.get_by_job_stage(job_id, self._stage)
+                if task:
+                    await task_repo.mark_dead(task.id, error)
+                await JobRepository(session).mark_failed(job_id, error)
+        except Exception as exc:
+            log.warning(
+                "consumer_mark_dead_failed", job_id=job_id, stage=self._stage, error=str(exc)
+            )
 
     def _shutdown(self) -> None:
         log.info("consumer_shutdown_signal", stage=self._stage)

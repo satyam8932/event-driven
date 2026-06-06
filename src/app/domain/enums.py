@@ -1,7 +1,7 @@
 import enum
 
 
-class JobStatus(str, enum.Enum):
+class JobStatus(enum.StrEnum):
     PENDING = "PENDING"
     PARSING = "PARSING"
     TTS = "TTS"
@@ -11,14 +11,14 @@ class JobStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 
-class TaskStage(str, enum.Enum):
+class TaskStage(enum.StrEnum):
     PARSE = "parse"
     TTS = "tts"
     STITCH = "stitch"
     NOTIFY = "notify"
 
 
-class TaskStatus(str, enum.Enum):
+class TaskStatus(enum.StrEnum):
     QUEUED = "QUEUED"
     PROCESSING = "PROCESSING"
     DONE = "DONE"

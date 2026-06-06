@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.db.models import OutboxEvent, Task
 from app.db.uow import unit_of_work
 from app.domain.enums import ROUTING_KEY, TaskStage
-from app.domain.errors import DuplicateEventError, SemaphoreFullError, StaleTransitionError
+from app.domain.errors import DuplicateEventError, StaleTransitionError
 from app.domain.events import EventEnvelope, TtsCompletedData
 from app.infra import storage
 from app.infra.locks import tts_generation_lock

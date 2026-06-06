@@ -9,8 +9,8 @@ from app.api.schemas import CreateJobRequest, CreateJobResponse, JobResponse
 from app.db.models import Job, OutboxEvent, Task
 from app.db.uow import unit_of_work
 from app.domain.enums import ROUTING_KEY, TaskStage
-from app.domain.events import EventEnvelope, JobCreatedData
 from app.domain.errors import StorageError
+from app.domain.events import EventEnvelope, JobCreatedData
 from app.infra import storage
 from app.logging import get_logger, set_correlation_context
 from app.repositories.job_repo import JobRepository
