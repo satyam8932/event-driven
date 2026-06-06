@@ -9,7 +9,7 @@ import aio_pika
 
 from app.config import get_settings
 from app.logging import get_logger
-from app.messaging.topology import DELAY_EXCHANGE_NAME
+from app.messaging.topology import DELAY_BUCKETS_MS, DELAY_EXCHANGE_NAME
 
 log = get_logger(__name__)
 
@@ -55,9 +55,6 @@ async def schedule_retry(
         return
 
     ttl_ms = _jitter(_delay_bucket(attempt))
-    # Pick closest declared bucket
-    from app.messaging.topology import DELAY_BUCKETS_MS
-
     bucket = min(DELAY_BUCKETS_MS, key=lambda b: abs(b - ttl_ms))
 
     headers[ATTEMPT_HEADER] = attempt
@@ -96,7 +93,6 @@ async def republish_for_semaphore_retry(
     stage: str = "tts",
 ) -> None:
     """Re-queue with a short delay when TTS semaphore is full — never block the consumer."""
-    from app.messaging.topology import DELAY_BUCKETS_MS
 
     headers = dict(original_message.headers or {})
     delay_exchange = await channel.get_exchange(DELAY_EXCHANGE_NAME)

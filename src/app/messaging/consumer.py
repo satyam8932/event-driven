@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 import aio_pika
 import aio_pika.abc
 
+from app.db.uow import unit_of_work
 from app.domain.errors import (
     DuplicateEventError,
     PermanentError,
@@ -18,6 +19,8 @@ from app.domain.events import EventEnvelope
 from app.logging import get_logger, set_correlation_context
 from app.messaging.retry import republish_for_semaphore_retry, route_to_dlq, schedule_retry
 from app.messaging.topology import declare_topology
+from app.repositories.job_repo import JobRepository
+from app.repositories.task_repo import TaskRepository
 
 log = get_logger(__name__)
 
@@ -108,9 +111,6 @@ class StageConsumer:
                 await schedule_retry(channel, message, self._stage, self._routing_key)
 
     async def _reset_task_for_retry(self, job_id: str) -> None:
-        from app.db.uow import unit_of_work
-        from app.repositories.task_repo import TaskRepository
-
         try:
             async with unit_of_work() as session:
                 repo = TaskRepository(session)
@@ -123,10 +123,6 @@ class StageConsumer:
             )
 
     async def _mark_task_dead(self, job_id: str, error: str) -> None:
-        from app.db.uow import unit_of_work
-        from app.repositories.job_repo import JobRepository
-        from app.repositories.task_repo import TaskRepository
-
         try:
             async with unit_of_work() as session:
                 task_repo = TaskRepository(session)

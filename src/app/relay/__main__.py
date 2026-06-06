@@ -18,8 +18,6 @@ log = get_logger(__name__)
 async def relay_loop() -> None:
     settings = get_settings()
     connection = await get_connection()
-    # aio-pika enables publisher_confirms=True by default; await exchange.publish()
-    # blocks until the broker sends a Basic.Ack — safe to mark published_at after.
     channel = await connection.channel()
     exchange = await declare_topology(channel)
 
