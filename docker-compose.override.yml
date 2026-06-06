@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # management UI
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"   # MinIO console
+
+  api:
+    volumes:
+      - ./src:/app/src
+    environment:
+      MINIO_PUBLIC_ENDPOINT: "localhost:9000"
+
+  worker:
+    volumes:
+      - ./src:/app/src
+
+  relay:
+    volumes:
+      - ./src:/app/src
+
+  janitor:
+    volumes:
+      - ./src:/app/src

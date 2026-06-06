@@ -66,6 +66,23 @@ Every worker stage is: **consume → do I/O → commit (state + next-stage outbo
 
 ---
 
+## Event Envelope (every message in the broker)
+
+Every event payload carries:
+```json
+{
+  "event_id":       "uuid-v4",        // unique per event emission; dedup key
+  "correlation_id": "uuid-v4",        // set at job creation, propagated through all stages
+  "job_id":         "uuid-v4",        // which job this event belongs to
+  "occurred_at":    "ISO-8601",
+  "version":        1,                // schema version for forward compatibility
+  "data":           { ... }           // stage-specific payload
+}
+```
+`correlation_id` flows from `POST /jobs` through every outbox row, every broker message, and every log line (injected via `contextvars` + `structlog`). This enables tracing a single workflow end-to-end in logs without a full tracing stack.
+
+---
+
 ## Data Model (Postgres, SQLAlchemy 2.0 async)
 
 - `jobs(id uuid pk, status, manuscript_key, final_key, correlation_id, created_at, updated_at)`
@@ -80,6 +97,12 @@ Every worker stage is: **consume → do I/O → commit (state + next-stage outbo
 
 ---
 
+## Delivery Guarantee Contract
+
+**This system does NOT provide exactly-once delivery.** It provides at-least-once delivery + idempotent consumers = **effectively-once processing**. Every pipeline stage can receive duplicates; each is designed to handle them safely without side effects.
+
+---
+
 ## Core Reliability Mechanisms
 
 ### 1. Idempotent consumers (effectively-once on at-least-once delivery)
@@ -88,8 +111,12 @@ Two layers, both required:
 2. **State-machine guard**: stage work only runs via `UPDATE tasks SET status='PROCESSING' WHERE id=? AND status='QUEUED' RETURNING`. No row ⇒ another worker already advanced it.
    Both live in the **same transaction** as the result commit. S3 writes are **content-addressed** (`audio/{hash}.wav`) so re-running overwrites identically — no duplicate artifacts.
 
+**Notification stage explicitly covered**: notify must also insert into `processed_events` (same pattern). If worker crashes after webhook fires but before ack, redelivery re-enters the handler, hits `ON CONFLICT DO NOTHING`, and skips. Without this, duplicate webhooks would be sent to the user. Webhook delivery itself is best-effort (logged on failure); the pipeline job is `COMPLETED` regardless — webhook reliability is a separate concern outside the pipeline.
+
 ### 2. Outbox pattern (no dual-write)
 State change + event are one DB tx. The **relay** loop: `SELECT ... FROM outbox WHERE published_at IS NULL ORDER BY id FOR UPDATE SKIP LOCKED LIMIT N` → publish with **publisher confirms** → `UPDATE published_at=now()`. `SKIP LOCKED` lets relays scale horizontally. Publisher confirms are mandatory — without them a relay could mark "published" on a message the broker dropped. Janitor prunes old published rows.
+
+**Relay crash safety (explicit)**: if relay publishes successfully and broker confirms, but relay crashes before writing `published_at`, the row remains `published_at IS NULL`. On restart, relay re-queries and re-publishes. This is a duplicate delivery — safe because all consumers are idempotent. The relay is intentionally at-least-once; consumer idempotency is the absorbing layer. This is correct behaviour, not a bug.
 
 ### 3. DLQ + exponential backoff (poison pill)
 Transient errors (simulated 500, semaphore-busy) → retry via delay queues. After **3 attempts** → terminal `q.<stage>.dlq`, task→`DEAD`, job→`FAILED`. A **poison manuscript** (sentinel marker in text) deterministically fails TTS and lands in the DLQ **without blocking the queue**, because retries go through delay queues, not by holding/redelivering on the live consumer. Error taxonomy distinguishes *retryable* vs *permanent* (permanent can short-circuit straight to DLQ). A small `requeue-from-dlq` script/endpoint allows replay after a fix.
@@ -106,7 +133,14 @@ Redis **ZSET-based leased semaphore**, all ops in one **Lua script** (atomic):
 - *Release*: `ZREM` in a `finally`. Crashed holder ⇒ lease expiry frees the slot automatically.
 - **Gotcha — don't block the consumer**: if acquire fails, **republish the message to a short delay queue (~2s) and ack** instead of busy-waiting. Blocking would deadlock prefetched messages all waiting on a full semaphore. This makes the limit a smooth global throttle.
 
-### 6. TTS idempotency / cost cache (Constraint B)
+### 6. Redis restart during active semaphore usage
+If Redis restarts while TTS workers hold semaphore slots:
+- Workers making Lua calls get `ConnectionError` → treated as **retryable** → republish to delay queue + ack (same path as semaphore-full).
+- The ZSET is lost on restart; all slots become available. A brief window exists where the limit is temporarily unenforced (workers that had already acquired and are mid-TTS continue running; new arrivals all acquire freely until normal concurrency restores). This is **accepted behaviour** for this assessment — the semaphore provides soft enforcement, not a hard transaction guarantee.
+- `redis.asyncio` is configured with auto-reconnect; relay and workers resume once Redis is healthy. The `depends_on` healthcheck ensures workers don't start without Redis; if Redis goes down mid-run, transient `ConnectionError`s are caught and retried normally.
+- For stronger guarantees in production: persistent RDB/AOF snapshots + AOF fsync, or Redlock across multiple Redis instances (noted but out of scope).
+
+### 7. TTS idempotency / cost cache (Constraint B)
 - Key = `sha256(text_block)`. Check Redis `tts:cache:{hash}` → durable `tts_cache` table → on miss call the simulated vendor.
 - **Cache stampede**: two identical blocks in flight both miss. Guard generation with a per-hash Redis lock (`SET NX PX`); the waiter re-checks the cache after acquiring. Combined with the global semaphore this guarantees the "vendor" is hit at most once per unique block. A vendor-call counter (log/metric) proves cache hits during verification.
 
@@ -190,6 +224,12 @@ SOLID mapping: repositories/adapters behind `Protocol`s (DIP); generic consumer 
 | 25 | Redis single-node lock SPOF | Acceptable for assessment; Redlock noted for multi-node |
 | 26 | Event schema evolution | Events carry `event_id`, `occurred_at`, `version`, `correlation_id` |
 | 27 | Graceful vs forced shutdown | SIGTERM drains; SIGKILL falls back to redelivery + lease |
+| 28 | Relay crashes after broker confirms, before `published_at` | Row stays unpublished → relay re-publishes on restart; idempotent consumers absorb duplicate |
+| 29 | Notify worker crashes after webhook, before ack | `processed_events` dedup blocks second notification attempt on redelivery |
+| 30 | Redis restart mid-semaphore | `ConnectionError` → retryable path; ZSET lost → slots temporarily unenforced; accepted behaviour |
+| 31 | Postgres unavailable at `POST /jobs` | API returns **503**; no request buffering; DB is source of truth, no valid state without it |
+| 32 | MinIO unavailable during worker I/O | `S3Error`/`ConnectionError` → retryable; republish to delay queue; after 3 attempts → DLQ, job `FAILED` |
+| 33 | Missing `correlation_id` in logs | Set at ingestion via `contextvars`, propagated through all outbox payloads and log context |
 
 ---
 
@@ -212,7 +252,7 @@ SOLID mapping: repositories/adapters behind `Protocol`s (DIP); generic consumer 
 2. DB layer: ORM models, Alembic migration, repositories + interfaces, UoW.
 3. Infra adapters: broker (topology + confirms), storage, redis, semaphore, locks.
 4. Outbox relay + messaging core (generic consumer, retry/DLQ, delay queues).
-5. API gateway: ingest (outbox) + status + health.
+5. API gateway: ingest (outbox) + status + health. Explicit error contract: **503** if Postgres unavailable (no buffering — DB is source of truth); **503** if MinIO PUT fails (manuscript stored before DB row, so failure is clean with no orphaned state).
 6. Vendors (simulated) + services (parse → tts → stitch → notify) wired as stage handlers.
 7. Janitor (lease reaper + prune).
 8. Tests (unit + integration) and demo scripts.
