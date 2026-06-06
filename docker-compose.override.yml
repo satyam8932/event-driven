@@ -35,6 +35,16 @@ services:
     volumes:
       - ./src:/app/src
 
+  adminer:
+    image: adminer:4-standalone
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
   # Dev tools container — runs ruff/black/mypy without starting infra
   # test-builder stage has dev deps; no ENTRYPOINT (unlike final stage)
   tools:
